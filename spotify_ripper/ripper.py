@@ -20,6 +20,7 @@ import itertools
 import requests
 import wave
 import re
+import mysql.connector
 
 try:
     # Python 3
@@ -173,6 +174,8 @@ class Ripper(threading.Thread):
         # check if we were passed a file name or search
         if len(args.uri) == 1 and path_exists(args.uri[0]):
             uris = [line.strip() for line in open(args.uri[0])]
+        elif len(args.uri) == 1 and args.uri[0].startswith("mysql:"):
+            uris = self.get_uris_from_db(args.uri[0])
         elif len(args.uri) == 1 and not args.uri[0].startswith("spotify:"):
             uris = [list(self.search_query(args.uri[0]))]
         else:
@@ -307,6 +310,22 @@ class Ripper(threading.Thread):
         self.logout()
         self.stop_event_loop()
         self.finished.set()
+
+    def get_uris_from_db(self, mysql_config):
+        print("Fetching uris from database...")
+
+        # mysql:root:root:localhost:3306:spotty
+        conf = mysql_config.split(":")
+        connection = mysql.connector.connect(user=conf[1], password=conf[2], host=conf[3], port=conf[4], database=conf[5])
+        cursor = connection.cursor()
+        cursor.execute('SELECT uri, title FROM items WHERE status = 0')
+        items = []
+        for row in cursor:
+            print row[1], row[0]
+            items.append(row[0])
+        cursor.close()
+        connection.close()
+        return items
 
     def load_link(self, uri):
         # blank out current playlist/album
