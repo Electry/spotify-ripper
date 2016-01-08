@@ -172,14 +172,19 @@ class Ripper(threading.Thread):
             return
 
         # check if we were passed a file name or search
-        if len(args.uri) == 1 and path_exists(args.uri[0]):
-            uris = [line.strip() for line in open(args.uri[0])]
-        elif len(args.uri) == 1 and args.uri[0].startswith("mysql:"):
-            uris = self.get_uris_from_db(args.uri[0])
-        elif len(args.uri) == 1 and not args.uri[0].startswith("spotify:"):
-            uris = [list(self.search_query(args.uri[0]))]
+        if len(args.uri) == 1:
+            uriArg = args.uri[0]
         else:
-            uris = args.uri
+            uriArg = args.uri
+
+        if path_exists(uriArg):
+            uris = [line.strip() for line in open(uriArg)]
+        elif uriArg.startswith("mysql:"):
+            uris = self.get_uris_from_db(uriArg)
+        elif not uriArg.startswith("spotify:"):
+            uris = [list(self.search_query(uriArg))]
+        else:
+            uris = uriArg
 
         def get_tracks_from_uri(uri):
             if isinstance(uri, list):
