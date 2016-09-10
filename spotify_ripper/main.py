@@ -379,7 +379,7 @@ def main(prog_args=sys.argv[1:]):
         help='Exclude albums that an artist \'appears on\' when passing '
              'a Spotify artist URI')
     parser.add_argument(
-        'uri', nargs="+",
+        '--uri', nargs="+",
         help='One or more Spotify URI(s) (either URI, a file of URIs or a '
              'search query)')
     args = parser.parse_args(remaining_argv)
