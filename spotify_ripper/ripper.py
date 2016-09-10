@@ -386,7 +386,6 @@ class Ripper(threading.Thread):
         self.stop_event_loop()
         self.finished.set()
 
-<<<<<<< HEAD
     def get_uris_from_db(self, mysql_config):
         print("Fetching uris from database...")
 
@@ -403,14 +402,8 @@ class Ripper(threading.Thread):
         connection.close()
         return items
 
-    def load_link(self, uri):
-        # blank out current playlist/album
-        self.current_playlist = None
-        self.current_album = None
-=======
     def check_stop_time(self):
         args = self.args
->>>>>>> upstream/master
 
         def wait_for_resume(resume_time):
             while datetime.now() < resume_time and not self.abort.is_set():
