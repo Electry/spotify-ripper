@@ -26,6 +26,8 @@ class Progress(object):
 
     # total progress
     show_total = False
+    skipped_tracks = 0
+    track_idx = 0
     total_tracks = 0
     total_position = 0
     total_duration = 0
@@ -47,24 +49,34 @@ class Progress(object):
         if not self.args.has_log:
             schedule.every(2).seconds.do(self.eta_calc)
 
-    def calc_total(self, tracks):
-        if len(tracks) <= 1:
+    def calc_total(self, track_pairs):
+        if len(track_pairs) <= 1:
             return
 
         self.show_total = True
+        self.track_idx = 0
         self.total_tracks = 0
         self.total_duration = 0
         self.total_size = 0
 
         # some duplicate work here, maybe cache this info beforehand?
-        for idx, track in enumerate(tracks):
+        for pair in track_pairs:
             try:
-                track.load()
-                if track.availability != 1:
+                track = pair[0]
+                audio_file = pair[1]
+
+                track.load(self.args.timeout)
+                # check if we should skip track
+                if track.availability != 1 or track.is_local:
+                    self.skipped_tracks += 1
                     continue
-                audio_file = self.ripper.format_track_path(idx, track)
-                if not self.args.overwrite and path_exists(audio_file):
+
+                # check if we should overwrite existing file
+                if not self.args.overwrite and path_exists(audio_file) and \
+                        not is_partial(audio_file, track):
+                    self.skipped_tracks += 1
                     continue
+
                 self.total_tracks += 1
                 self.total_duration += track.duration
                 file_size = calc_file_size(track)
@@ -126,14 +138,18 @@ class Progress(object):
         except (NameError, IOError):
             self.term_width = int(os.environ.get('COLUMNS', 120)) - 1
 
+    def increment_track_idx(self):
+        self.track_idx += 1
+
     def prepare_track(self, track):
         self.song_position = 0
         self.song_duration = track.duration
         self.move_cursor = False
         self.current_track = track
 
-    def end_track(self):
-        self.end_progress()
+    def end_track(self, show_end=True):
+        if show_end:
+            self.end_progress()
         self.stat_prev = None
         self.song_eta = None
         self.total_eta = None

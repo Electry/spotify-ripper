@@ -16,6 +16,8 @@ Libspotify’s Deprecation
 
 *Note that as of May 2015 libspotify is officially deprecated by Spotify and is no longer actively maintained.*
 
+*Note that as of Jan 2016 Spotify may no longer be issuing developer keys.*
+
 *Spotify has published newer libraries intended for Android and iOS development, as well as web APIs to access track metadata and manage playlists. Though, for making apps with Spotify playback capabilities, on any other platform than Android and iOS, there is currently no alternative to libspotify.*
 
 *libspotify has been the main way of integrating with Spotify since 2009, and is today a part of numerous open source projects and commercial applications, including many receivers and even cars. There’s no guarantees, but one can hope that the large deployment of libspotify means that the library will continue to work with the Spotify service for a long time into the future.*
@@ -54,6 +56,8 @@ Features
 
 -  option to rip to FLAC, a loseless codec, instead of MP3 (requires extra ``flac`` dependency)
 
+-  option to rip to AIFF, a loseless codec, instead of MP3 (requires extra ``sox`` dependency)
+
 -  option to rip to Ogg Vorbis instead of MP3 (requires extra ``vorbis-tools`` dependency)
 
 -  option to rip to Opus instead of MP3 (requires extra ``opus-tools`` dependency)
@@ -61,6 +65,10 @@ Features
 -  option to rip to AAC instead of MP3 (requires extra ``faac`` dependency)
 
 -  option to rip to MP4/M4A instead of MP3 (requires compiling ``fdkaac``)
+
+-  option to replace output filenames
+
+-  option to normalize output filenames to NFKD (see http://unicode.org/faq/normalization.html)
 
 **Please note: Spotify’s highest quality setting is 320 kbps, so the benefit of ripping to a lossless format is to not double encode the audio data. It’s not possible to rip in true lossless quality.**
 
@@ -75,16 +83,27 @@ Command Line
 
 .. code::
 
-    usage: spotify-ripper [-h] [-S SETTINGS] [-a] [--aac] [--alac] [-A]
+    usage: spotify-ripper [-h] [-S SETTINGS] [-a] [--aac] [--aiff] [--alac]
+                          [--all-artists] [--artist-album-type ARTIST_ALBUM_TYPE]
+                          [--artist-album-market ARTIST_ALBUM_MARKET] [-A]
                           [-b BITRATE] [-c] [--comp COMP] [--comment COMMENT]
-                          [--cover-file COVER_FILE] [-d DIRECTORY]
-                          [--fail-log FAIL_LOG] [--flac] [-f FORMAT] [--flat]
-                          [--flat-with-index] [-g {artist,album}] [--id3-v23]
-                          [-k KEY] [-u USER] [-p PASSWORD] [-l] [-L LOG] [--pcm]
-                          [--mp4] [--normalize] [-o] [--opus] [--playlist-m3u]
-                          [--playlist-wpl] [--playlist-sync] [-q VBR]
-                          [-Q {160,320,96}] [-s] [--stereo-mode {j,s,f,d,m,l,r}]
-                          [-V] [--wav] [--vorbis] [-r] [-x]
+                          [--cover-file COVER_FILE]
+                          [--cover-file-and-embed COVER_FILE] [-d DIRECTORY]
+                          [--fail-log FAIL_LOG] [--flac] [-f FORMAT]
+                          [--format-case {upper,lower,capitalize}] [--flat]
+                          [--flat-with-index] [-g {artist,album}]
+                          [--grouping GROUPING] [--id3-v23] [-k KEY] [-u USER]
+                          [-p PASSWORD] [--large-cover-art] [-l] [-L LOG] [--pcm]
+                          [--mp4] [--normalize] [-na] [-o] [--opus]
+                          [--partial-check {none,weak,strict}]
+                          [--play-token-resume RESUME_AFTER] [--playlist-m3u]
+                          [--playlist-wpl] [--playlist-sync] [--plus-pcm]
+                          [--plus-wav] [-q VBR] [-Q {160,320,96}]
+                          [--remove-offline-cache] [--resume-after RESUME_AFTER]
+                          [-R REPLACE [REPLACE ...]] [-s]
+                          [--stereo-mode {j,s,f,d,m,l,r}]
+                          [--stop-after STOP_AFTER] [--timeout TIMEOUT] [-V]
+                          [--wav] [--windows-safe] [--vorbis] [-r]
                           uri [uri ...]
 
     Rips Spotify URIs to MP3s with ID3 tags and album covers
@@ -98,59 +117,88 @@ Command Line
                             Path to settings, config and temp files directory [Default=~/.spotify-ripper]
       -a, --ascii           Convert the file name and the metadata tags to ASCII encoding [Default=utf-8]
       --aac                 Rip songs to AAC format with FreeAAC instead of MP3
+      --aiff                Rip songs to lossless AIFF encoding instead of MP3
       --alac                Rip songs to Apple Lossless format instead of MP3
+      --all-artists         Store all artists, rather than just the main artist, in the track's metadata tag
+      --artist-album-type ARTIST_ALBUM_TYPE
+                            Only load albums of specified types when passing a Spotify artist URI [Default=album,single,ep,compilation,appears_on]
+      --artist-album-market ARTIST_ALBUM_MARKET
+                            Only load albums with the specified ISO2 country code when passing a Spotify artist URI. You may get duplicate albums if not set. [Default=any]
       -A, --ascii-path-only
                             Convert the file name (but not the metadata tags) to ASCII encoding [Default=utf-8]
       -b BITRATE, --bitrate BITRATE
                             CBR bitrate [Default=320]
       -c, --cbr             CBR encoding [Default=VBR]
       --comp COMP           compression complexity for FLAC and Opus [Default=Max]
-      --comment COMMENT     Add custom metadata comment to all songs
+      --comment COMMENT     Set comment metadata tag to all songs. Can include same tags as --format.
       --cover-file COVER_FILE
                             Save album cover image to file name (e.g "cover.jpg") [Default=embed]
+      --cover-file-and-embed COVER_FILE
+                            Same as --cover-file but embeds the cover image too
       -d DIRECTORY, --directory DIRECTORY
                             Base directory where ripped MP3s are saved [Default=cwd]
       --fail-log FAIL_LOG   Logs the list of track URIs that failed to rip
       --flac                Rip songs to lossless FLAC encoding instead of MP3
       -f FORMAT, --format FORMAT
                             Save songs using this path and filename structure (see README)
+      --format-case {upper,lower,capitalize}
+                            Convert all words of the file name to upper-case, lower-case, or capitalized
       --flat                Save all songs to a single directory (overrides --format option)
       --flat-with-index     Similar to --flat [-f] but includes the playlist index at the start of the song file
       -g {artist,album}, --genres {artist,album}
                             Attempt to retrieve genre information from Spotify's Web API [Default=skip]
+      --grouping GROUPING   Set grouping metadata tag to all songs. Can include same tags as --format.
       --id3-v23             Store ID3 tags using version v2.3 [Default=v2.4]
       -k KEY, --key KEY     Path to Spotify application key file [Default=Settings Directory]
       -u USER, --user USER  Spotify username
       -p PASSWORD, --password PASSWORD
                             Spotify password [Default=ask interactively]
+      --large-cover-art     Attempt to retrieve 640x640 cover art from Spotify's Web API [Default=300x300]
       -l, --last            Use last login credentials
       -L LOG, --log LOG     Log in a log-friendly format to a file (use - to log to stdout)
       --pcm                 Saves a .pcm file with the raw PCM data instead of MP3
       --mp4                 Rip songs to MP4/M4A format with Fraunhofer FDK AAC codec instead of MP3
       --normalize           Normalize volume levels of tracks
+      -na, --normalized-ascii
+                            Convert the file name to normalized ASCII with unicodedata.normalize (NFKD)
       -o, --overwrite       Overwrite existing MP3 files [Default=skip]
       --opus                Rip songs to Opus encoding instead of MP3
+      --partial-check {none,weak,weak:<sec>,strict}
+                            Check for and overwrite partially ripped files. "weak" will err on the side of not re-ripping the file if it is unsure, whereas "strict" will re-rip the file.  You can override the number of seconds of wiggle-room for the "weak" check using "weak:<sec>" [Default=weak:3]
+      --play-token-resume RESUME_AFTER
+                            If the 'play token' is lost to a different device using the same Spotify account, the script will wait a speficied amount of time before restarting. This argument takes the same values as --resume-after [Default=abort]
       --playlist-m3u        create a m3u file when ripping a playlist
       --playlist-wpl        create a wpl file when ripping a playlist
       --playlist-sync       Sync playlist songs (rename and remove old songs)
+      --plus-pcm            Saves a .pcm file in addition to the encoded file (e.g. mp3)
+      --plus-wav            Saves a .wav file in addition to the encoded file (e.g. mp3)
       -q VBR, --vbr VBR     VBR quality setting or target bitrate for Opus [Default=0]
       -Q {160,320,96}, --quality {160,320,96}
                             Spotify stream bitrate preference [Default=320]
-      -s, --strip-colors    Strip coloring from output[Default=colors]
+      --remove-offline-cache
+                            Remove libspotify's offline cache directory after the ripis complete to save disk space
+      --resume-after RESUME_AFTER
+                            Resumes script after a certain amount of time has passed after stopping (e.g. 1h30m). Alternatively, accepts a specific time in 24hr format to start after (e.g 03:30, 16:15). Requires --stop-after option to be set
+      -R REPLACE [REPLACE ...], --replace REPLACE [REPLACE ...]
+                            pattern to replace the output filename separated by "/". The following example replaces all spaces with "_" and all "-" with ".":    spotify-ripper --replace " /_" "\-/." uri
+      -s, --strip-colors    Strip coloring from output [Default=colors]
       --stereo-mode {j,s,f,d,m,l,r}
                             Advanced stereo settings for Lame MP3 encoder only
+      --stop-after STOP_AFTER
+                            Stops script after a certain amount of time has passed (e.g. 1h30m). Alternatively, accepts a specific time in 24hr format to stop after (e.g 03:30, 16:15)
+      --timeout TIMEOUT     Override the PySpotify timeout value in seconds (Default=10 seconds)
       -V, --version         show program's version number and exit
       --wav                 Rip songs to uncompressed WAV file instead of MP3
+      --windows-safe        Make filename safe for Windows file system (truncate filename to 255 characters)
       --vorbis              Rip songs to Ogg Vorbis encoding instead of MP3
       -r, --remove-from-playlist
-                            Delete tracks from playlist after successful ripping [Default=no]
-      -x, --exclude-appears-on
-                            Exclude albums that an artist 'appears on' when passing a Spotify artist URI
+                            [WARNING: SPOTIFY IS NOT PROPROGATING PLAYLIST CHANGES TO THEIR SERVERS] Delete tracks from playlist after successful ripping [Default=no]
 
     Example usage:
-        rip a single file: spotify-ripper -u user -p password spotify:track:52xaypL0Kjzk0ngwv3oBPR
-        rip entire playlist: spotify-ripper -u user -p password spotify:user:username:playlist:4vkGNcsS8lRXj4q945NIA4
-        rip a list of URIs: spotify-ripper -u user -p password list_of_uris.txt
+        rip a single file: spotify-ripper -u user spotify:track:52xaypL0Kjzk0ngwv3oBPR
+        rip entire playlist: spotify-ripper -u user spotify:user:username:playlist:4vkGNcsS8lRXj4q945NIA4
+        rip a list of URIs: spotify-ripper -u user list_of_uris.txt
+        rip tracks from Spotify's charts: spotify-ripper -l spotify:charts:regional:global:weekly:latest
         search for tracks to rip: spotify-ripper -l -Q 160 -o "album:Rumours track:'the chain'"
 
 Facebook Login
@@ -223,6 +271,12 @@ Format String Variables
 | ``{disc_num}``, ``{disc_idx}``,         | The disc number of the album                  |
 | ``{disc_index}``                        |                                               |
 +-----------------------------------------+-----------------------------------------------+
+| ``{smart_track_num}``,                  | For a multi-disc album, ``{smart_track_num}`` |
+| ``{smart_track_idx}``,                  | will return a number combining the disc and   |
+| ``{smart_track_index}``                 | track number. e.g. for disc 2, track 4 it will|
+|                                         | return "204". For a single disc album, it will|
+|                                         | return the track num.                         |
++-----------------------------------------+-----------------------------------------------+
 | ``{playlist}``, ``{playlist_name}``     | Name of playlist if passed a playlist uri,    |
 |                                         | otherwise "No Playlist"                       |
 +-----------------------------------------+-----------------------------------------------+
@@ -230,10 +284,24 @@ Format String Variables
 |``{playlist_user}``,                     | a playlist uri, otherwise "No Playlist Owner" |
 |``{playlist_username}``                  |                                               |
 +-----------------------------------------+-----------------------------------------------+
+|``{playlist_track_add_time}``,           | When the track was added to the playlist      |
+|``{track_add_time}``,                    |                                               |
++-----------------------------------------+-----------------------------------------------+
+|``{playlist_track_add_user}``,           | The user that added the track to the playlist |
+|``{track_add_user}``,                    |                                               |
++-----------------------------------------+-----------------------------------------------+
 |``{user}``, ``{username}``               | Spotify username of logged-in user            |
 +-----------------------------------------+-----------------------------------------------+
 |``{feat_artists}``,                      | Featuring artists join by commas (see Prefix  |
 |``{featuring_artists}``                  | String section below)                         |
++-----------------------------------------+-----------------------------------------------+
+|``{copyright}``                          | Album copyright message                       |
++-----------------------------------------+-----------------------------------------------+
+|``{label}``, ``{copyright_holder}``      | Album copyright message with the year         |
+|                                         | removed at the start of the string if it      |
+|                                         | exists                                        |
++-----------------------------------------+-----------------------------------------------+
+|``{track_uri}``, ``{uri}``               | Spotify track uri                             |
 +-----------------------------------------+-----------------------------------------------+
 
 Any substring in the format string that does not match a variable above will be passed through to the file/path name unchanged.
@@ -241,12 +309,12 @@ Any substring in the format string that does not match a variable above will be 
 Zero-Filled Padding
 ~~~~~~~~~~~~~~~~~~~
 
-Format variables that represent an index can be padded with zeros to a user-specified length.  For example, ``{idx:3}`` will produce the following output: 001, 002, 003, etc.  If no number is provided, no zero-filled padding will occur (e.g. 8, 9, 10, 11, ...). The variables that accept this option include ``{idx}``, ``{track_num}``, and ``{disc_num}`` and thier aliases.
+Format variables that represent an index can be padded with zeros to a user-specified length.  For example, ``{idx:3}`` will produce the following output: 001, 002, 003, etc.  If no number is provided, no zero-filled padding will occur (e.g. 8, 9, 10, 11, ...). The variables that accept this option include ``{idx}``, ``{track_num}``, ``{disc_num}``, ``{smart_track_num}`` and their aliases.
 
 Prefix String
 ~~~~~~~~~~~~~
 
-Format variable ``feat_artists`` takes a prefix string to be prepended before the output.  For example, ``{feat_artists:featuring} will produce the follow ouputing ``featuing Bruno Mars``.  If there are no featuring artists, the prefix string (and any preceeding spaces) will not be included.
+Format variable ``feat_artists`` takes a prefix string to be prepended before the output.  For example, ``{feat_artists:featuring} will produce the follow output ``featuing Bruno Mars``.  If there are no featuring artists, the prefix string (and any preceding spaces) will not be included.
 
 Playlist Sync Option
 ~~~~~~~~~~~~~~~~~~~~
@@ -287,6 +355,8 @@ Prerequisites
 
 -  (optional) `fdkaac <https://github.com/nu774/fdkaac>`__
 
+-  (optional) `sox <http://sox.sourceforge.net>`__
+
 Mac OS X
 ~~~~~~~~
 
@@ -299,8 +369,9 @@ To install pyenv using homebrew:
 
     $ brew update
     $ brew install pyenv
+    $ eval "$(pyenv init -)"
+    ## the next line ensures 'eval "$(pyenv init -)"' is run everytime terminal is opened
     $ echo 'if which pyenv > /dev/null; then eval "$(pyenv init -)"; fi' >> ~/.bash_profile
-    ## restart terminal ##
     $ pyenv install 2.7.10  # or whatever version of python you want
     $ pyenv global 2.7.10
     $ python -V             # should say Python 2.7.10
@@ -315,6 +386,8 @@ To install spotify-ripper once pyenv is setup:
     $ brew install lame
     $ pip install spotify-ripper
     $ pyenv rehash
+
+**Note that Spotify may no longer be issuing developer keys.** See `Libspotify’s Deprecation`_
 
 Download an application key file ``spotify_appkey.key`` from
 ``https://devaccount.spotify.com/my-account/keys/`` (requires a Spotify
@@ -352,6 +425,8 @@ To install spotify-ripper once pyenv is setup:
     $ sudo make install prefix=/usr/local
     $ pip install spotify-ripper
     $ pyenv rehash
+
+**Note that Spotify may no longer be issuing developer keys.** See `Libspotify’s Deprecation`_
 
 Download an application key file ``spotify_appkey.key`` from
 ``https://devaccount.spotify.com/my-account/keys/`` (requires a Spotify
@@ -391,6 +466,9 @@ In addition to MP3 encoding, ``spotify-ripper`` supports encoding to FLAC, AAC, 
     # Opus
     $ brew install opus-tools
 
+    # SoX
+    $ brew install sox
+
 **Ubuntu/Debian**
 
 .. code:: bash
@@ -418,6 +496,9 @@ In addition to MP3 encoding, ``spotify-ripper`` supports encoding to FLAC, AAC, 
 
     # Opus
     $ sudo apt-get install opus-tools
+
+    # SoX
+    $ sudo apt-get install sox
 
 
 Upgrade

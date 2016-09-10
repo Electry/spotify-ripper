@@ -8,6 +8,7 @@ import os
 import time
 import spotify
 import codecs
+import shutil
 
 
 class PostActions(object):
@@ -27,8 +28,9 @@ class PostActions(object):
                 os.makedirs(enc_str(_base_dir))
 
             encoding = "ascii" if args.ascii else "utf-8"
-            self.fail_log_file = codecs.open(os.path.join(
-                _base_dir, args.fail_log[0]), 'w', encoding)
+            self.fail_log_file = codecs.open(
+                enc_str(os.path.join(_base_dir, args.fail_log)),
+                'w', encoding)
 
     def log_success(self, track):
         self.success_tracks.append(track)
@@ -62,7 +64,7 @@ class PostActions(object):
         def log_tracks(tracks):
             for track in tracks:
                 try:
-                    track.load()
+                    track.load(self.args.timeout)
                     if (len(track.artists) > 0 and track.artists[0].name
                             is not None and track.name is not None):
                         print_with_bullet(track.artists[0].name + " - " +
@@ -84,49 +86,157 @@ class PostActions(object):
                   ")\n" + ("-" * 79) + Fore.RESET)
             log_tracks(self.failure_tracks)
 
+    def get_chart_name(self, chart):
+        region_mapping = {
+            "global": "Global",
+            "us": "United States",
+            "gb": "United Kingdom",
+            "ad": "Andorra",
+            "ar": "Argentina",
+            "at": "Austria",
+            "au": "Australia",
+            "be": "Belgium",
+            "bg": "Bulgaria",
+            "bo": "Bolivia",
+            "br": "Brazil",
+            "ca": "Canada",
+            "ch": "Switzerland",
+            "cl": "Chile",
+            "co": "Colombia",
+            "cr": "Costa Rica",
+            "cy": "Cyprus",
+            "cz": "Czech Republic",
+            "de": "Germany",
+            "dk": "Denmark",
+            "do": "Dominican Republic",
+            "ec": "Ecuador",
+            "ee": "Estonia",
+            "es": "Spain",
+            "fi": "Finland",
+            "fr": "France",
+            "gr": "Greece",
+            "gt": "Guatemala",
+            "hk": "Hong Kong",
+            "hn": "Honduras",
+            "hu": "Hungary",
+            "id": "Indonesia",
+            "ie": "Ireland",
+            "is": "Iceland",
+            "it": "Italy",
+            "lt": "Lithuania",
+            "lu": "Luxembourg",
+            "lv": "Latvia",
+            "mt": "Malta",
+            "mx": "Mexico",
+            "my": "Malaysia",
+            "ni": "Nicaragua",
+            "nl": "Netherlands",
+            "no": "Norway",
+            "nz": "New Zealand",
+            "pa": "Panama",
+            "pe": "Peru",
+            "ph": "Philippines",
+            "pl": "Poland",
+            "pt": "Portugal",
+            "py": "Paraguay",
+            "se": "Sweden",
+            "sg": "Singapore",
+            "sk": "Slovakia",
+            "sv": "El Salvador",
+            "tr": "Turkey",
+            "tw": "Taiwan",
+            "uy": "Uruguay"
+        }
+        return (chart["time_window"].title() + " " +
+                region_mapping.get(chart["region"], "") + " " +
+                ("Top" if chart["metrics"] == "regional" else "Viral") + " " +
+                ("200" if chart["metrics"] == "regional" else "50"))
+
+    def get_playlist_name(self):
+        ripper = self.ripper
+
+        if ripper.current_playlist is not None:
+            return ripper.current_playlist.name
+        elif ripper.current_album is not None:
+            return (ripper.current_album.artist.name + " - " + ripper.current_album.name)
+        elif ripper.current_chart is not None:
+            return self.get_chart_name(ripper.current_chart)
+        else:
+            return None
+
+    def get_playlist_path(self, name, ext):
+        ext = "." + ext
+
+        if self.args.playlist_directory is not None:
+            playlist_dir = self.args.playlist_directory
+
+            # check to see if we were passed in a playlist filename
+            if playlist_dir.endswith(ext):
+                playlist_file = playlist_dir
+                playlist_dir = os.path.dirname(playlist_dir)
+            else:
+                playlist_file = to_ascii(os.path.join(playlist_dir, name + ext))
+
+            # ensure path exists
+            if not os.path.exists(playlist_dir):
+                os.makedirs(playlist_dir)
+            return playlist_file
+        else:
+            return to_ascii(os.path.join(base_dir(), name + ext))
+
+    def get_playlist_file_path(self, _file):
+        _base_dir = base_dir()
+        if self.args.playlist_absolute_paths:
+            return os.path.join(_base_dir, _file)
+        else:
+            return os.path.relpath(_file, _base_dir)
+
     def create_playlist_m3u(self, tracks):
         args = self.args
         ripper = self.ripper
 
-        if ripper.current_playlist is not None and args.playlist_m3u:
-            _base_dir = base_dir()
-            playlist_path = to_ascii(
-                os.path.join(_base_dir,
-                             ripper.current_playlist.name + '.m3u')
-            )
+        name = self.get_playlist_name()
+        if name is not None and args.playlist_m3u:
+            name = sanitize_playlist_name(to_ascii(name))
+            playlist_path = self.get_playlist_path(name, "m3u")
 
             print(Fore.GREEN + "Creating playlist m3u file " +
                   playlist_path + Fore.RESET)
 
             encoding = "ascii" if args.ascii else "utf-8"
-            with codecs.open(playlist_path, 'w', encoding) as playlist:
+            with codecs.open(enc_str(playlist_path), 'w', encoding) as playlist:
                 for idx, track in enumerate(tracks):
+                    track.load(args.timeout)
+                    if track.is_local:
+                        continue
                     _file = ripper.format_track_path(idx, track)
                     if path_exists(_file):
-                        playlist.write(os.path.relpath(_file, _base_dir) +
-                                       "\n")
+                        playlist.write(self.get_playlist_file_path(_file) +
+                                "\n")
 
     def create_playlist_wpl(self, tracks):
         args = self.args
         ripper = self.ripper
 
-        if ripper.current_playlist is not None and args.playlist_wpl:
-            _base_dir = base_dir()
-            playlist_path = to_ascii(
-                os.path.join(_base_dir,
-                             ripper.current_playlist.name + '.wpl')
-            )
+        name = self.get_playlist_name()
+        if name is not None and args.playlist_wpl:
+            name = sanitize_playlist_name(to_ascii(name))
+            playlist_path = self.get_playlist_path(name, "wpl")
 
             print(Fore.GREEN + "Creating playlist wpl file " +
                   playlist_path + Fore.RESET)
 
             encoding = "ascii" if args.ascii else "utf-8"
-            with codecs.open(playlist_path, 'w', encoding) as playlist:
+            with codecs.open(enc_str(playlist_path), 'w', encoding) as playlist:
                 # to get an accurate track count
-                track_paths = [_file for _file in
-                               [ripper.format_track_path(idx, track)
-                                for idx, track in enumerate(tracks)]
-                               if path_exists(_file)]
+                track_paths = []
+                for idx, track in enumerate(tracks):
+                    track.load(args.timeout)
+                    if track.is_local:
+                        continue
+                    _file = ripper.format_track_path(idx, track)
+                    if path_exists(_file):
+                        track_paths.append(_file)
 
                 playlist.write('<?wpl version="1.0"?>\n')
                 playlist.write('<smil>\n')
@@ -139,9 +249,7 @@ class PostActions(object):
                 playlist.write('\t\t<author>' +
                                ripper.session.user.display_name +
                                '</author>\n')
-                playlist.write('\t\t<title>' +
-                               ripper.current_playlist.name +
-                               '</title>\n')
+                playlist.write('\t\t<title>' + name + '</title>\n')
                 playlist.write('\t</head>\n')
                 playlist.write('\t<body>\n')
                 playlist.write('\t\t<seq>\n')
@@ -149,7 +257,7 @@ class PostActions(object):
                     _file.replace("&", "&amp;")
                     _file.replace("'", "&apos;")
                     playlist.write('\t\t\t<media src="' +
-                                   os.path.relpath(_file, _base_dir) +
+                                   self.get_playlist_file_path(_file) +
                                    "\"/>\n")
                 playlist.write('\t\t</seq>\n')
                 playlist.write('\t</body>\n')
@@ -161,6 +269,18 @@ class PostActions(object):
         if ripper.audio_file is not None and path_exists(ripper.audio_file):
             print(Fore.YELLOW + "Deleting partially ripped file" + Fore.RESET)
             rm_file(ripper.audio_file)
+
+            # check for any extra pcm or wav files
+            def delete_extra_file(ext):
+                audio_file = change_file_extension(ripper.audio_file, ext)
+                if path_exists(audio_file):
+                    rm_file(audio_file)
+
+            if self.args.plus_wav:
+                delete_extra_file("wav")
+
+            if self.args.plus_pcm:
+                delete_extra_file("pcm")
 
     def queue_remove_from_playlist(self, idx):
         ripper = self.ripper
@@ -191,7 +311,20 @@ class PostActions(object):
                   ripper.current_playlist.name + "..." + Fore.RESET)
 
             ripper.current_playlist.remove_tracks(self.tracks_to_remove)
-            ripper.session.process_events()
 
             while ripper.current_playlist.has_pending_changes:
                 time.sleep(0.1)
+
+    def remove_offline_cache(self):
+        ripper = self.ripper
+
+        if self.args.remove_offline_cache:
+            if self.args.settings is not None:
+                storage_path = norm_path(self.args.settings)
+            else:
+                storage_path = default_settings_dir()
+
+            storage_path = os.path.join(storage_path, "Storage")
+            if path_exists(storage_path):
+                shutil.rmtree(enc_str(storage_path))
+

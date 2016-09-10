@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import unicode_literals
+from __future__ import unicode_literals, print_function
 
 from colorama import Fore, Style
+from datetime import datetime, timedelta
+import mutagen
 import os
 import sys
 import errno
 import re
 import math
+import unicodedata
 
 
 #  since there is no class, use global var
@@ -34,13 +37,21 @@ def path_exists(path):
 def print_str(_str):
     """print without newline"""
     if not get_args().has_log:
-        sys.stdout.write(_str)
-        sys.stdout.flush()
+        if sys.version_info >= (3, 0):
+            print(_str, end = '', flush = True)
+        else:
+            sys.stdout.write(_str)
+            sys.stdout.flush()
 
 
 def norm_path(path):
     """normalize path"""
     return os.path.normpath(os.path.realpath(path))
+
+
+def sanitize_playlist_name(name):
+    """replace unwanted path characters"""
+    return re.sub(r"[\\/]", "-", name) if name is not None else None
 
 
 # borrowed from AndersTornkvist's fork
@@ -73,9 +84,16 @@ def to_ascii(_str, on_error='ignore'):
             return _str
 
 
+def to_normalized_ascii(_str):
+    if sys.version_info < (3, 0):
+        if not isinstance(_str, unicode):
+            _str = unicode(_str, "utf-8")
+    return unicodedata.normalize('NFKD', _str).encode('ASCII', 'ignore')
+
+
 def rm_file(file_name):
     try:
-        os.remove(file_name)
+        os.remove(enc_str(file_name))
     except OSError as e:
         # don't need to print a warning if the file doesn't exist
         if e.errno != errno.ENOENT:
@@ -91,13 +109,13 @@ def default_settings_dir():
 
 def settings_dir():
     args = get_args()
-    return norm_path(args.settings[0]) if args.settings is not None \
+    return norm_path(args.settings) if args.settings is not None \
         else default_settings_dir()
 
 
 def base_dir():
     args = get_args()
-    return norm_path(args.directory[0]) if args.directory is not None \
+    return norm_path(args.directory) if args.directory is not None \
         else os.getcwd()
 
 
@@ -105,10 +123,239 @@ def calc_file_size(track):
     return (int(get_args().quality) / 8) * track.duration
 
 
+def parse_time_str(time_str):
+    # if we are passed a time (e.g. 14:20)
+    if re.match(r"^\d{2}:\d{2}$", time_str):
+        t = datetime.strptime(time_str, "%H:%M")
+        calc_time = datetime.now().replace(hour=t.hour, minute=t.minute)
+        if datetime.now() > calc_time:
+            calc_time += timedelta(days=1)
+
+        return calc_time
+
+    # if we are passed hour/minute offset (e.g. 1h20m)
+    match = re.match(r"^((\d+h)?(\d+m))|(\d+h)$", time_str)
+    if match is not None:
+        calc_time = datetime.now()
+        groups = match.groups()
+
+        hours = groups[1] if groups[1] is not None else groups[3]
+        if hours is not None:
+            calc_time = calc_time + timedelta(hours=int(hours[:-1]))
+
+        minutes = groups[2]
+        if minutes is not None:
+            calc_time = calc_time + timedelta(minutes=int(minutes[:-1]))
+
+        return calc_time
+
+    return None
+
+
+def get_playlist_track(track, playlist):
+    if playlist is not None:
+        pl_tracks = playlist.tracks_with_metadata
+        for pl_track in pl_tracks:
+            if pl_track.track == track:
+                return pl_track
+    return None
+
+
+def change_file_extension(file_name, ext):
+    return os.path.splitext(file_name)[0] + "." + ext
+
+
+def format_track_string(ripper, format_string, idx, track):
+    args = get_args()
+    current_album = ripper.current_album
+    current_playlist = ripper.current_playlist
+
+    # this fixes the track.disc
+    if not track.is_loaded:
+        track.load(args.timeout)
+    if not track.album.is_loaded:
+        track.album.load(args.timeout)
+    if current_album is None:
+        current_album = track.album
+    album_browser = track.album.browse()
+    album_browser.load(args.timeout)
+
+    track_artist = to_ascii(
+        escape_filename_part(track.artists[0].name))
+    track_artists = to_ascii(
+        escape_filename_part(", ".join(
+            [artist.name for artist in track.artists])))
+    if len(track.artists) > 1:
+        featuring_artists = to_ascii(
+            escape_filename_part(", ".join(
+                [artist.name for artist in track.artists[1:]])))
+    else:
+        featuring_artists = ""
+
+    album_artist = to_ascii(
+        escape_filename_part(current_album.artist.name))
+    album_artists_web = track_artists
+
+    # only retrieve album_artist_web if it exists in the format string
+    if format_string.find("{album_artists_web}") >= 0:
+        artist_array = \
+            ripper.web.get_artists_on_album(current_album.link.uri)
+        if artist_array is not None:
+            album_artists_web = to_ascii(
+                escape_filename_part(", ".join(artist_array)))
+
+    album = to_ascii(escape_filename_part(track.album.name))
+    track_name = to_ascii(escape_filename_part(track.name))
+    year = str(track.album.year)
+    extension = args.output_type
+    idx_str = str(idx + 1)
+    track_num = str(track.index)
+    disc_num = str(track.disc)
+    track_uri = track.link.uri
+
+    # calculate num of discs on the album
+    num_discs = 0
+    for track_browse in album_browser.tracks:
+        if track_browse.disc > num_discs:
+            num_discs = track_browse.disc
+
+    if num_discs >= 2:
+        smart_num = str((int(disc_num) * 100) + int(track_num))
+    else:
+        smart_num = track_num
+
+    if current_playlist is not None:
+        playlist_name = to_ascii(
+            sanitize_playlist_name(current_playlist.name))
+        playlist_owner = to_ascii(
+            current_playlist.owner.display_name)
+    else:
+        playlist_name = "No Playlist"
+        playlist_owner = "No Playlist Owner"
+    user = ripper.session.user.display_name
+
+    # load copyright only if needed
+    copyright = label = ""
+    if (format_string.find("{copyright}") >= 0 or
+            format_string.find("{label}") >= 0):
+        album_browser = track.album.browse()
+        album_browser.load(args.timeout)
+        if len(album_browser.copyrights) > 0:
+            copyright = escape_filename_part(album_browser.copyrights[0])
+            label = re.sub(r"^[0-9]+\s+", "", copyright)
+
+    # load playlist create time or creator only if needed
+    create_time = creator = ""
+    if format_string.find("{create_time}") >= 0 or \
+            format_string.find("{creator}") >= 0:
+        pl_track = get_playlist_track(track, current_playlist)
+        if pl_track is not None:
+            create_time = datetime.fromtimestamp(
+                    pl_track.create_time).strftime('%Y-%m-%d %H:%M:%S')
+            creator = pl_track.creator.display_name
+
+    tags = {
+        "track_artist": track_artist,
+        "track_artists": track_artists,
+        "album_artist": album_artist,
+        "album_artists_web": album_artists_web,
+        "artist": track_artist,
+        "artists": track_artists,
+        "album": album,
+        "track_name": track_name,
+        "track": track_name,
+        "year": year,
+        "ext": extension,
+        "extension": extension,
+        "idx": idx_str,
+        "index": idx_str,
+        "track_num": track_num,
+        "track_idx": track_num,
+        "track_index": track_num,
+        "disc_num": disc_num,
+        "disc_idx": disc_num,
+        "disc_index": disc_num,
+        "smart_track_num": smart_num,
+        "smart_track_idx": smart_num,
+        "smart_track_index": smart_num,
+        "playlist": playlist_name,
+        "playlist_name": playlist_name,
+        "playlist_owner": playlist_owner,
+        "playlist_user": playlist_owner,
+        "playlist_username": playlist_owner,
+        "user": user,
+        "username": user,
+        "feat_artists": featuring_artists,
+        "featuring_artists": featuring_artists,
+        "copyright": copyright,
+        "label": label,
+        "copyright_holder": label,
+        "playlist_track_add_time": create_time,
+        "track_add_time": create_time,
+        "playlist_track_add_user": creator,
+        "track_add_user": creator,
+        "track_uri": track_uri,
+        "uri": track_uri
+    }
+    fill_tags = {"idx", "index", "track_num", "track_idx",
+                 "track_index", "disc_num", "disc_idx", "disc_index",
+                 "smart_track_num", "smart_track_idx", "smart_track_index"}
+    prefix_tags = {"feat_artists", "featuring_artists"}
+    paren_tags = {"track_name", "track"}
+    for tag in tags.keys():
+        format_string = format_string.replace("{" + tag + "}", tags[tag])
+        if tag in fill_tags:
+            match = re.search(r"\{" + tag + r":\d+\}", format_string)
+            if match:
+                tokens = format_string[match.start():match.end()]\
+                    .strip("{}").split(":")
+                tag_filled = tags[tag].zfill(int(tokens[1]))
+                format_string = format_string[:match.start()] + tag_filled + \
+                    format_string[match.end():]
+        if tag in prefix_tags:
+            # don't print prefix if there are no values
+            if len(tags[tag]) > 0:
+                match = re.search(r"\{" + tag + r":[^\}]+\}", format_string)
+                if match:
+                    tokens = format_string[match.start():match.end()]\
+                        .strip("{}").split(":")
+                    format_string = format_string[:match.start()] + tokens[1] + \
+                        " " + tags[tag] + format_string[match.end():]
+            else:
+                match = re.search(r"\s*\{" + tag +
+                                  r":[^\}]+\}", format_string)
+                if match:
+                    format_string = format_string[:match.start()] + \
+                                 format_string[match.end():]
+        if tag in paren_tags:
+            match = re.search(r"\{" + tag + r":paren\}", format_string)
+            if match:
+                match_tag = re.search(r"(.*)\s+-\s+([^-]+)", tags[tag])
+                if match_tag:
+                    format_string = format_string[:match.start()] + \
+                                 match_tag.group(1) + " (" + \
+                                 match_tag.group(2) + ")" + \
+                                 format_string[match.end():]
+                else:
+                    format_string = format_string[:match.start()] + tags[tag] + \
+                                 format_string[match.end():]
+
+    if args.format_case is not None:
+        if args.format_case == "upper":
+            format_string = format_string.upper()
+        elif args.format_case == "lower":
+            format_string = format_string.lower()
+        elif args.format_case == "capitalize":
+            format_string = ' '.join(word[0].upper() + word[1:] for \
+                word in format_string.split())
+
+    return format_string
+
+
 # returns path of executable
 def which(program):
     def is_exe(fpath):
-        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+        return os.path.isfile(fpath) and os.access(enc_str(fpath), os.X_OK)
 
     fpath, fname = os.path.split(program)
     if fpath:
@@ -182,6 +429,32 @@ def format_size(size, short=False):
         else:
             str_value = str_value[:3]
         return "{0:>3s}{1}".format(str_value, suffix)
+
+# returns true if audio_file is a partial of track
+def is_partial(audio_file, track):
+    args = get_args()
+    if args.partial_check == "none":
+        return False
+
+    def audio_file_duration(audio_file):
+        if (path_exists(audio_file)):
+            _file = mutagen.File(audio_file)
+            if _file is not None and _file.info is not None:
+                return _file.info.length
+        return None
+
+    audio_file_dur = audio_file_duration(audio_file)
+
+    # for 'weak', give a ~1.5 second wiggle-room
+    if args.partial_check == "strict":
+        return (audio_file_dur is None or
+            track.duration > (audio_file_dur * 1000))
+    else:
+        wiggle_room = max((track.duration * 0.01), 3000) if \
+            args.partial_check == "weak" else \
+            int(args.partial_check.split(":")[1]) * 1000
+        return (audio_file_dur is not None and
+            (track.duration - wiggle_room) > (audio_file_dur * 1000))
 
 
 # borrowed from eyeD3

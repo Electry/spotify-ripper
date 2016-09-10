@@ -5,14 +5,22 @@ from setuptools import setup, find_packages
 import os
 
 
+def create_default_dir():
+    default_dir = os.path.normpath(os.path.realpath(
+        (os.path.join(os.path.expanduser("~"), ".spotify-ripper"))))
+    if not os.path.exists(default_dir):
+        print("Creating default settings directory: " +
+            default_dir)
+        os.makedirs(default_dir.encode("utf-8"))
+
+
 def _read(fn):
     path = os.path.join(os.path.dirname(__file__), fn)
     return open(path).read()
 
-
 setup(
     name='spotify-ripper',
-    version='2.6.10',
+    version='2.10.6',
     packages=find_packages(exclude=["tests"]),
     scripts=['spotify_ripper/main.py'],
     include_package_data=True,
@@ -33,7 +41,7 @@ setup(
     # Requirements
     install_requires=[
         'pyspotify==2.0.5',
-        'colorama>=0.3.3',
+        'colorama==0.3.3',
         'mutagen==1.30',
         'requests>=2.3.0',
         'schedule>=0.3.1',
@@ -47,7 +55,7 @@ setup(
     license='MIT',
     keywords="spotify ripper mp3 ogg vorbis flac opus acc mp4 m4a",
     url='https://github.com/jrnewell/spotify-ripper',
-    download_url='https://github.com/jrnewell/spotify-ripper/tarball/2.6.10',
+    download_url='https://github.com/jrnewell/spotify-ripper/tarball/2.10.6',
     classifiers=[
         'Topic :: Multimedia :: Sound/Audio',
         'Topic :: Multimedia :: Sound/Audio :: Capture/Recording',
@@ -61,3 +69,5 @@ setup(
     ],
     long_description=_read('README.rst'),
 )
+
+create_default_dir()
