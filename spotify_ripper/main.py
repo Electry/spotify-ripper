@@ -375,10 +375,6 @@ def main(prog_args=sys.argv[1:]):
              'THEIR SERVERS] Delete tracks from playlist after successful '
              'ripping [Default=no]')
     parser.add_argument(
-        '-x', '--exclude-appears-on', action='store_true',
-        help='Exclude albums that an artist \'appears on\' when passing '
-             'a Spotify artist URI')
-    parser.add_argument(
         'uri', nargs="+",
         help='One or more Spotify URI(s) (either URI, a file of URIs or a '
              'search query)')

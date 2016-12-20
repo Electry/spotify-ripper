@@ -23,7 +23,6 @@ import wave
 import re
 import select
 import traceback
-import mysql.connector
 
 try:
     # Python 3
@@ -188,20 +187,8 @@ class Ripper(threading.Thread):
         if self.abort.is_set():
             return
 
-        # check if we were passed a file name or search
-        if len(args.uri) == 1:
-            uriArg = args.uri[0]
-        else:
-            uriArg = args.uri
-
-        if path_exists(uriArg):
-            uris = [line.strip() for line in open(uriArg)]
-        elif uriArg.startswith("mysql:"):
-            uris = self.get_uris_from_db(uriArg)
-        elif not uriArg.startswith("spotify:"):
-            uris = [list(self.search_query(uriArg))]
-        else:
-            uris = uriArg
+        # list of spotify URIs
+        uris = args.uri
 
         def get_tracks_from_uri(uri):
             self.current_playlist = None
@@ -386,31 +373,8 @@ class Ripper(threading.Thread):
         self.stop_event_loop()
         self.finished.set()
 
-<<<<<<< HEAD
-    def get_uris_from_db(self, mysql_config):
-        print("Fetching uris from database...")
-
-        # mysql:root:root:localhost:3306:spotty
-        conf = mysql_config.split(":")
-        connection = mysql.connector.connect(user=conf[1], password=conf[2], host=conf[3], port=conf[4], database=conf[5])
-        cursor = connection.cursor()
-        cursor.execute('SELECT uri, title FROM items WHERE status = 0')
-        items = []
-        for row in cursor:
-            print row[1], row[0]
-            items.append(row[0])
-        cursor.close()
-        connection.close()
-        return items
-
-    def load_link(self, uri):
-        # blank out current playlist/album
-        self.current_playlist = None
-        self.current_album = None
-=======
     def check_stop_time(self):
         args = self.args
->>>>>>> upstream/master
 
         def wait_for_resume(resume_time):
             while datetime.now() < resume_time and not self.abort.is_set():
