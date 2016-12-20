@@ -379,9 +379,6 @@ class Ripper(threading.Thread):
             # remove libspotify's offline storage cache
             self.post.remove_offline_cache()
 
-            # remove uri from rip queue
-            self.update_uri_in_db(uriArg, uri)
-
         # logout, we are done
         self.post.end_failure_log()
         self.post.print_summary()
@@ -391,10 +388,12 @@ class Ripper(threading.Thread):
 
     def get_uris_from_db(self, mysql_config):
         print("Fetching uris from database...")
+
+        # mysql:root:root:localhost:3306:spotty
         conf = mysql_config.split(":")
         connection = mysql.connector.connect(user=conf[1], password=conf[2], host=conf[3], port=conf[4], database=conf[5], charset='utf8', use_unicode=True)
         cursor = connection.cursor()
-        cursor.execute("SELECT uri, title FROM items WHERE status = 0")
+        cursor.execute('SELECT uri, title FROM items WHERE status = 0')
         items = []
         for row in cursor:
             print row[1], row[0]
@@ -402,16 +401,6 @@ class Ripper(threading.Thread):
         cursor.close()
         connection.close()
         return items
-
-    def update_uri_in_db(self, mysql_config, uri):
-        print("Updating uri as ripped...")
-        conf = mysql_config.split(":")
-        connection = mysql.connector.connect(user=conf[1], password=conf[2], host=conf[3], port=conf[4], database=conf[5], charset='utf8', use_unicode=True)
-        cursor = connection.cursor()
-        cursor.execute("UPDATE items SET status = 1 WHERE uri = %s", (str(uri),))
-        cursor.close()
-        connection.commit()
-        connection.close()
 
     def check_stop_time(self):
         args = self.args
