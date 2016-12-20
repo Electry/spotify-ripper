@@ -391,7 +391,7 @@ class Ripper(threading.Thread):
 
         # mysql:root:root:localhost:3306:spotty
         conf = mysql_config.split(":")
-        connection = mysql.connector.connect(user=conf[1], password=conf[2], host=conf[3], port=conf[4], database=conf[5], charset='utf8', use_unicode=True)
+        connection = mysql.connector.connect(user=conf[1], password=conf[2], host=conf[3], port=conf[4], database=conf[5])
         cursor = connection.cursor()
         cursor.execute('SELECT uri, title FROM items WHERE status = 0')
         items = []
